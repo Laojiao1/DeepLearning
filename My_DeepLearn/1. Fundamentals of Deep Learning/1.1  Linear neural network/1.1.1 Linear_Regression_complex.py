@@ -1,0 +1,85 @@
+import random
+import torch
+from d2l import torch as d2l
+from matplotlib import pyplot as plt
+
+# 1. 构造训练样本
+"""根据带有噪声的线性模型构造一个人造数据集。我们使用线性模型参数 w = [2, -3,4]^T、b = 4.2 和噪声项 ε 生成数据集及其标签："""
+def synthetic_data(w, b, num_examples):
+    """生成 y = Xw + b + 噪声"""
+    # 均值为0,方差为1的随机数，大小为num_example, 列数为w的长度
+    X = torch.normal(0, 1, (num_examples, len(w)))
+    y = torch.matmul(X, w) + b
+    y += torch.normal(0, 0.01, y.shape)
+    return X, y.reshape((-1, 1))
+
+true_w = torch.tensor([2, -3.4])
+true_b = 4.2
+features, labels = synthetic_data(true_w, true_b, 1000)
+
+# features中的每一行都包含一个二维数据样本，labels中的每一行都包含一维标签值（一个标量）
+d2l.set_figsize() # 用于设置图形大小'd2l.set_figsize(figsize=(width, height))'
+d2l.plt.scatter(features[:, 1].detach().numpy(),
+                labels.detach().numpy(), 1)
+# plt.show()
+
+# 定义一个data_iter函数，该函数接收批量大小、特征矩阵和标签向量作为输入，生成大小为batch_size的小批量
+def data_iter(batch_size, features, labels):
+    num_examples = len(features)
+    indices = list(range(num_examples))
+    # 这些样本是随机读取的，没有特定的顺序
+    random.shuffle(indices)
+    for i in range(0, num_examples, batch_size):
+        batch_indices = torch.tensor(
+            indices[i:min(i + batch_size, num_examples)])
+        yield features[batch_indices], labels[batch_indices]
+
+
+batch_size = 10
+for X, y in data_iter(batch_size, features, labels):
+    print(X, '\n', y)
+    break
+
+# 2. 定义初始化模型参数
+w = torch.normal(0, 0.01, size=(2, 1), requires_grad=True)
+b = torch.zeros(1, requires_grad=True)
+
+# 3. 定义模型
+def linreg(X, w, b):
+    """线性模型"""
+    return torch.matmul(X, w) + b
+
+# 4. 定义损失函数
+def squared_loss(y_hat, y):
+    """均方损失"""
+    return (y_hat-y.reshape(y_hat.shape))**2/2
+
+# 5. 定义优化算法
+def sgd(params, lr, batch_size):
+    with torch.no_grad():
+        for param in params:
+            param -= lr * param.grad / batch_size
+            param.grad.zero_()
+
+# 6. 训练
+lr = 0.03
+num_epoch = 3
+net = linreg
+loss = squared_loss
+
+for epoch in range(num_epoch):
+    for X, y in data_iter(batch_size, features, labels):
+        """X, y 的小批量损失"""
+        l = loss(net(X, w, b), y)
+        l.sum().backward()
+        """使用参数的梯度更新参数"""
+        sgd([w, b], lr, batch_size)
+
+    with torch.no_grad():
+        train_l = loss(net(features, w, b), labels)
+        print(f'epoch: {epoch + 1}, loss: {float(train_l.mean()):f}')
+
+
+# 最后我们可以算一下预测值与真实值的误差
+print(f'w的估计误差: {true_w - w.reshape(true_w.shape)}')
+print(f'b的估计误差: {true_b - b}')
